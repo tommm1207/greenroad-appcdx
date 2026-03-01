@@ -2204,7 +2204,7 @@ h6,
     #data-table.attendance-table tbody tr td:nth-child(2),
     #data-table.attendance-table tbody tr td:nth-child(3),
     #data-table.attendance-table tbody tr td:nth-child(4) {
-        position: static !important;
-        box-shadow: none !important;
+        position: sticky !important;
+        box-shadow: 2px 0 4px rgba(0,0,0,0.05) !important;
     }
 }
