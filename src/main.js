@@ -1,13 +1,20 @@
 // --- CẤU HÌNH API ---
-// (Google Apps Script URL không dùng khi đã chuyển sang Supabase)
+import { initializeApp } from "firebase/app";
+import { getFirestore, collection, getDocs, addDoc, updateDoc, doc, query, where, getDocs as getDocsQuery, setDoc } from "firebase/firestore";
 
-// --- KẾT NỐI SUPABASE - TẢI DỮ LIỆU CHO TẤT CẢ BẢNG ---
-// Dữ liệu được tải khi đăng nhập qua getInitialData() → callSupabase('read', table).
-// Thêm/Sửa/Xóa dùng callGAS('saveData'|'updateData'|'delete') → callSupabase('insert'|'update'|'delete').
-// Tên bảng Supabase map trong TABLE_MAP, khóa chính trong PK_MAP.
-const SUPABASE_URL = 'https://weipegqglhqsqvdzgztb.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6IndlaXBlZ3FnbGhxc3F2ZHpnenRiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzAzODcyNzAsImV4cCI6MjA4NTk2MzI3MH0.v9ylIEOGNrbTyDpjbWst4KoXtKL1cJ58A-LEkXKCd5Q';
-const supabaseClient = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// Your web app's Firebase configuration
+const firebaseConfig = {
+  apiKey: "AIzaSyDBZaMGbP-bhxLY0O75vGXUdNe3kDR_UhM",
+  authDomain: "greenroad-appcdx.firebaseapp.com",
+  projectId: "greenroad-appcdx",
+  storageBucket: "greenroad-appcdx.firebasestorage.app",
+  messagingSenderId: "1018014184662",
+  appId: "1:1018014184662:web:5214f704fc58184e9b0577"
+};
+
+// Initialize Firebase
+const app = initializeApp(firebaseConfig);
+const db = getFirestore(app);
 
 // Network Monitoring
 window.isOnline = navigator.onLine;
@@ -635,8 +642,8 @@ function getDropdownForField(sheet, fieldName) {
     return cfg || null;
 }
 
-// --- HÀM GỌI API SUPABASE ---
-async function callSupabase(action, table, data = null, id = null) {
+// --- HÀM GỌI API FIREBASE ---
+async function callFirebase(action, table, data = null, id = null) {
     if (!window.isOnline && action === 'read') {
         console.log(`[Offline] Đang lấy dữ liệu từ CACHE cho ${table}`);
         return { status: 'success', data: JSON.parse(localStorage.getItem(`cache_${table}`) || '[]') };
@@ -648,37 +655,57 @@ async function callSupabase(action, table, data = null, id = null) {
     }
 
     try {
-        let result;
         const mappedTable = TABLE_MAP[table] || table;
+        const pkField = PK_MAP[mappedTable] || 'ID';
 
         if (action === 'read') {
-            result = await supabaseClient.from(mappedTable).select('*');
-            if (result.error) throw result.error;
-            var data = Array.isArray(result.data) ? result.data : [];
-            localStorage.setItem(`cache_${table}`, JSON.stringify(data));
-            return { status: 'success', data: data };
+            const querySnapshot = await getDocs(collection(db, mappedTable));
+            const resultData = [];
+            querySnapshot.forEach((doc) => {
+                resultData.push({ ...doc.data(), _docId: doc.id });
+            });
+            localStorage.setItem(`cache_${table}`, JSON.stringify(resultData));
+            return { status: 'success', data: resultData };
         } else if (action === 'insert') {
-            result = await supabaseClient.from(mappedTable).insert([data]);
-            if (result.error) throw result.error;
+            // Check if data has PK, if so, we can use it as document ID or just let Firebase generate one
+            if (data[pkField]) {
+                await setDoc(doc(db, mappedTable, String(data[pkField])), data);
+            } else {
+                await addDoc(collection(db, mappedTable), data);
+            }
             return { status: 'success' };
         } else if (action === 'update') {
-            const pk = PK_MAP[mappedTable] || 'ID';
-            result = await supabaseClient.from(mappedTable).update(data).eq(pk, id);
-            if (result.error) throw result.error;
+            // Find the document by PK
+            const q = query(collection(db, mappedTable), where(pkField, "==", id));
+            const querySnapshot = await getDocsQuery(q);
+            if (!querySnapshot.empty) {
+                const docRef = querySnapshot.docs[0].ref;
+                await updateDoc(docRef, data);
+            } else {
+                // If we saved it with PK as docId
+                const docRef = doc(db, mappedTable, String(id));
+                await updateDoc(docRef, data);
+            }
             return { status: 'success' };
         } else if (action === 'delete') {
-            const pk = PK_MAP[mappedTable] || 'ID';
-            result = await supabaseClient.from(mappedTable).update({ 'Delete': 'X' }).eq(pk, id);
-            if (result.error) throw result.error;
+            const q = query(collection(db, mappedTable), where(pkField, "==", id));
+            const querySnapshot = await getDocsQuery(q);
+            if (!querySnapshot.empty) {
+                const docRef = querySnapshot.docs[0].ref;
+                await updateDoc(docRef, { 'Delete': 'X' });
+            } else {
+                const docRef = doc(db, mappedTable, String(id));
+                await updateDoc(docRef, { 'Delete': 'X' });
+            }
             return { status: 'success' };
         }
     } catch (err) {
-        console.error('Supabase Error:', err);
+        console.error('Firebase Error:', err);
         return { status: 'error', message: err.message };
     }
 }
 
-// Map các tên sheet sang tên bảng Supabase (nếu khác nhau)
+// Map các tên sheet sang tên bảng Firebase (nếu khác nhau)
 const TABLE_MAP = {
     "Chamcong": "Chamcong", "LichSuLuong": "LichSuLuong", "GiaoDichLuong": "GiaoDichLuong",
     "BanGiaoCongCu": "BanGiaoCongCu", "Phieunhap": "PhieuNhap", "Phieuxuat": "PhieuXuat",
@@ -700,7 +727,7 @@ const PK_MAP = {
     "Chiphichitiet": "ID_ChiTiet", "Luongphucap": "ID lương", "Doitac": "ID đối tác"
 };
 
-// --- HÀM GỌI SUPABASE (ĐĂNG NHẬP + CRUD) ---
+// --- HÀM GỌI FIREBASE (ĐĂNG NHẬP + CRUD) ---
 async function callGAS(action, sheet, data = null, id = null) {
     if (action === 'loginUser') {
         if (sheet === 'admin' && data === 'admin') {
@@ -715,18 +742,29 @@ async function callGAS(action, sheet, data = null, id = null) {
                 }
             };
         }
-        const { data: user, error } = await supabaseClient.from('User').select('*').eq('ID', sheet).eq('App_pass', data).single();
-        if (error) return { status: 'error', error: 'Sai ID hoặc mật khẩu' };
-        const normalizedUser = {
-            ...user,
-            name: user['Họ và tên'] || user['ID'],
-            role: user['Phân quyền'] || user['Chức vụ'] || 'Nhân viên'
-        };
-        return { status: 'success', user: normalizedUser };
+        
+        try {
+            const q = query(collection(db, 'User'), where('ID', '==', sheet), where('App_pass', '==', data));
+            const querySnapshot = await getDocsQuery(q);
+            
+            if (querySnapshot.empty) {
+                return { status: 'error', error: 'Sai ID hoặc mật khẩu' };
+            }
+            
+            const user = querySnapshot.docs[0].data();
+            const normalizedUser = {
+                ...user,
+                name: user['Họ và tên'] || user['ID'],
+                role: user['Phân quyền'] || user['Chức vụ'] || 'Nhân viên'
+            };
+            return { status: 'success', user: normalizedUser };
+        } catch (error) {
+            return { status: 'error', error: error.message };
+        }
     }
-    // Lưu mới → insert Supabase
+    // Lưu mới → insert Firebase
     if (action === 'saveData') {
-        return callSupabase('insert', sheet, data, null);
+        return callFirebase('insert', sheet, data, null);
     }
     // Cập nhật → lấy khóa chính từ dòng tại EDIT_INDEX rồi update
     if (action === 'updateData') {
@@ -736,9 +774,9 @@ async function callGAS(action, sheet, data = null, id = null) {
         const mappedTable = TABLE_MAP[sheet] || sheet;
         const pkField = PK_MAP[mappedTable] || 'ID';
         const pkValue = row[pkField];
-        return callSupabase('update', sheet, data, pkValue);
+        return callFirebase('update', sheet, data, pkValue);
     }
-    return callSupabase(action, sheet, data, id);
+    return callFirebase(action, sheet, data, id);
 }
 
 // --- ĐĂNG KÝ PWA (Service Worker + Cài đặt) ---
@@ -861,7 +899,7 @@ function refreshAllData() {
 
 function refreshSingleSheet(sheet) {
     showLoading(true);
-    return callSupabase('read', sheet).then(res => {
+    return callFirebase('read', sheet).then(res => {
         showLoading(false);
         if (res.status == 'success') {
             var data = Array.isArray(res.data) ? res.data : [];
@@ -876,7 +914,7 @@ function getInitialData() {
     var promises = [];
     MENU_STRUCTURE.forEach(group => {
         group.items.forEach(m => {
-            promises.push(callSupabase('read', m.sheet).then(res => {
+            promises.push(callFirebase('read', m.sheet).then(res => {
                 if (res.status == 'success') GLOBAL_DATA[m.sheet] = Array.isArray(res.data) ? res.data : [];
             }));
         });
@@ -889,7 +927,7 @@ function getInitialData() {
         if (child && allSheets.indexOf(child) === -1) allSheets.push(child);
     });
     allSheets.forEach(s => {
-        promises.push(callSupabase('read', s).then(res => {
+        promises.push(callFirebase('read', s).then(res => {
             if (res.status == 'success') GLOBAL_DATA[s] = Array.isArray(res.data) ? res.data : [];
         }));
     });
@@ -956,7 +994,7 @@ async function processOfflineQueue() {
 
     console.log(`Đang đồng bộ ${queue.length} lệnh offline...`);
     for (const item of queue) {
-        await callSupabase(item.action, item.table, item.data, item.id);
+        await callFirebase(item.action, item.table, item.data, item.id);
     }
     localStorage.removeItem('offline_queue');
 
@@ -2871,9 +2909,9 @@ async function processMonthlyPayroll(params) {
             // Lưu vào database
             var saveResult;
             if (existingRecord) {
-                saveResult = await callSupabase('update', 'BangLuongThang', payrollRecord, existingRecord['ID_BangLuong']);
+                saveResult = await callFirebase('update', 'BangLuongThang', payrollRecord, existingRecord['ID_BangLuong']);
             } else {
-                saveResult = await callSupabase('insert', 'BangLuongThang', payrollRecord);
+                saveResult = await callFirebase('insert', 'BangLuongThang', payrollRecord);
             }
             
             if (saveResult.status === 'success') {
@@ -3215,9 +3253,9 @@ window.saveIndividualPayroll = async function(payrollRecord) {
         
         var result;
         if (existingRecord) {
-            result = await callSupabase('update', 'BangLuongThang', payrollRecord, payrollRecord['ID_BangLuong']);
+            result = await callFirebase('update', 'BangLuongThang', payrollRecord, payrollRecord['ID_BangLuong']);
         } else {
-            result = await callSupabase('insert', 'BangLuongThang', payrollRecord);
+            result = await callFirebase('insert', 'BangLuongThang', payrollRecord);
         }
         
         if (result.status === 'success') {
@@ -4300,9 +4338,9 @@ window.submitData = function () {
         if (!parentExists) {
             (async function () {
                 try {
-                    var childResult = await callSupabase('insert', 'XuatChiTiet', fd);
+                    var childResult = await callFirebase('insert', 'XuatChiTiet', fd);
                     if (childResult.status !== 'success') {
-                        var stubResult = await callSupabase('insert', 'Phieuxuat', {
+                        var stubResult = await callFirebase('insert', 'Phieuxuat', {
                             'ID phieu Xuat': parentId,
                             'NgayXuat': fd['NgayXuat'] || fd['Ngày xuất'] || new Date().toISOString().split('T')[0],
                             'Tên kho': fd['Tên kho'] || '',
@@ -4312,7 +4350,7 @@ window.submitData = function () {
                             'TongTien': parseFloat(fd['ThanhTien']) || 0
                         });
                         if (stubResult.status === 'success') {
-                            childResult = await callSupabase('insert', 'XuatChiTiet', fd);
+                            childResult = await callFirebase('insert', 'XuatChiTiet', fd);
                         }
                     }
                     if (childResult.status === 'success') {
@@ -4325,12 +4363,12 @@ window.submitData = function () {
                             return r['ID phieu Xuat'] === parentId && r['Delete'] !== 'X';
                         });
                         if (parentExistsNow) {
-                            await callSupabase('update', 'Phieuxuat', {
+                            await callFirebase('update', 'Phieuxuat', {
                                 'TongTien': tongTien,
                                 'Diễn giải': 'Tổng hợp từ ' + children.length + ' dòng'
                             }, parentId);
                         } else {
-                            await callSupabase('insert', 'Phieuxuat', {
+                            await callFirebase('insert', 'Phieuxuat', {
                                 'ID phieu Xuat': parentId,
                                 'NgayXuat': fd['NgayXuat'] || fd['Ngày xuất'] || new Date().toISOString().split('T')[0],
                                 'Tên kho': fd['Tên kho'] || '',
@@ -4364,9 +4402,9 @@ window.submitData = function () {
         if (!parentExists2) {
             (async function () {
                 try {
-                    var childResult2 = await callSupabase('insert', 'Chuyenkhochitiet', fd);
+                    var childResult2 = await callFirebase('insert', 'Chuyenkhochitiet', fd);
                     if (childResult2.status !== 'success') {
-                        var stubResult2 = await callSupabase('insert', 'Phieuchuyenkho', {
+                        var stubResult2 = await callFirebase('insert', 'Phieuchuyenkho', {
                             'ID Chkho': parentId2,
                             'NgayChuyen': fd['NgayChuyen'] || fd['Ngày chuyển'] || new Date().toISOString().split('T')[0],
                             'KhoDi': fd['Kho nguồn'] || fd['KhoDi'] || '',
@@ -4378,7 +4416,7 @@ window.submitData = function () {
                             'TongGiaTri': parseFloat(fd['ThanhTien']) || 0
                         });
                         if (stubResult2.status === 'success') {
-                            childResult2 = await callSupabase('insert', 'Chuyenkhochitiet', fd);
+                            childResult2 = await callFirebase('insert', 'Chuyenkhochitiet', fd);
                         }
                     }
                     if (childResult2.status === 'success') {
@@ -4392,13 +4430,13 @@ window.submitData = function () {
                             return r['ID Chkho'] === parentId2 && r['Delete'] !== 'X';
                         });
                         if (parentExists2Now) {
-                            await callSupabase('update', 'Phieuchuyenkho', {
+                            await callFirebase('update', 'Phieuchuyenkho', {
                                 'TongSoLuong': tongSL,
                                 'TongGiaTri': tongGT,
                                 'LyDo': 'Tổng hợp từ ' + children2.length + ' vật tư'
                             }, parentId2);
                         } else {
-                            await callSupabase('insert', 'Phieuchuyenkho', {
+                            await callFirebase('insert', 'Phieuchuyenkho', {
                                 'ID Chkho': parentId2,
                                 'NgayChuyen': fd['NgayChuyen'] || fd['Ngày chuyển'] || new Date().toISOString().split('T')[0],
                                 'KhoDi': fd['Kho nguồn'] || fd['KhoDi'] || '',
@@ -4439,7 +4477,7 @@ window.submitData = function () {
                         return c['ID phieu Xuat'] === pid && c['Delete'] !== 'X';
                     });
                     var sum = kids.reduce(function (s, c) { return s + (parseFloat(c['ThanhTien']) || 0); }, 0);
-                    callSupabase('update', 'Phieuxuat', { 'TongTien': sum }, pid);
+                    callFirebase('update', 'Phieuxuat', { 'TongTien': sum }, pid);
                 });
             }
             if (CURRENT_SHEET === 'Chuyenkhochitiet' && fd['ID Chkho']) {
@@ -4450,7 +4488,7 @@ window.submitData = function () {
                     });
                     var sumSL = ckKids.reduce(function (s, c) { return s + (parseFloat(c['SoLuong']) || 0); }, 0);
                     var sumGT = ckKids.reduce(function (s, c) { return s + (parseFloat(c['ThanhTien']) || 0); }, 0);
-                    callSupabase('update', 'Phieuchuyenkho', { 'TongSoLuong': sumSL, 'TongGiaTri': sumGT }, ckid);
+                    callFirebase('update', 'Phieuchuyenkho', { 'TongSoLuong': sumSL, 'TongGiaTri': sumGT }, ckid);
                 });
             }
         } else { showLoading(false); alert(r.message); }
@@ -5186,7 +5224,7 @@ async function submitQuickExpense(params) {
                 'TongSoTien': 0,
                 'Trangthai': 'Đang xử lý'
             };
-            var parentResult = await callSupabase('insert', 'Chiphi', parentData);
+            var parentResult = await callFirebase('insert', 'Chiphi', parentData);
             if (parentResult.status !== 'success') {
                 throw new Error(parentResult.message || 'Lỗi khi tạo phiếu chi phí');
             }
@@ -5210,7 +5248,7 @@ async function submitQuickExpense(params) {
         if (params.soluong) childData['SoLuong'] = params.soluong;
         if (params.dvt) childData['DonViTinh'] = params.dvt;
         if (params.dongia) childData['DonGia'] = params.dongia;
-        var childResult = await callSupabase('insert', 'Chiphichitiet', childData);
+        var childResult = await callFirebase('insert', 'Chiphichitiet', childData);
         if (childResult.status !== 'success') {
             throw new Error(childResult.message || 'Lỗi khi lưu chi tiết chi phí');
         }
@@ -5235,22 +5273,22 @@ async function submitQuickExpense(params) {
                     'GhiChu': 'Từ chi phí: ' + (params.noidung || params.loai)
                 };
                 
-                var nhapChiTietResult = await callSupabase('insert', 'NhapChiTiet', nhapChiTietData);
+                var nhapChiTietResult = await callFirebase('insert', 'NhapChiTiet', nhapChiTietData);
                 if (nhapChiTietResult.status !== 'success') {
                     // Fallback: nếu FK yêu cầu cha tồn tại → tạo phiếu tối thiểu trước, rồi thử lại con, sau đó cập nhật cha từ con
-                    var stubResult = await callSupabase('insert', 'Phieunhap', {
+                    var stubResult = await callFirebase('insert', 'Phieunhap', {
                         'ID phieu nhap': phieuNhapId, 'NgayNhap': params.date, 'Tên kho': params.kho,
                         'Người nhập': userId, 'Diễn giải': 'Đang tổng hợp...', 'Trangthai': 'Hoàn thành', 'TongTien': params.sotien
                     });
                     if (stubResult.status === 'success') {
-                        nhapChiTietResult = await callSupabase('insert', 'NhapChiTiet', nhapChiTietData);
+                        nhapChiTietResult = await callFirebase('insert', 'NhapChiTiet', nhapChiTietData);
                         if (nhapChiTietResult.status === 'success') {
                             await refreshSingleSheet('NhapChiTiet');
                             var agg = (GLOBAL_DATA['NhapChiTiet'] || []).filter(function (c) {
                                 return c['ID phieu nhap'] === phieuNhapId && c['Delete'] !== 'X';
                             });
                             var sumTien = agg.reduce(function (s, c) { return s + (parseFloat(c['ThanhTien']) || 0); }, 0);
-                            await callSupabase('update', 'Phieunhap', { 'TongTien': sumTien, 'Diễn giải': 'Tự động từ chi phí (tổng hợp từ ' + agg.length + ' dòng)' }, phieuNhapId);
+                            await callFirebase('update', 'Phieunhap', { 'TongTien': sumTien, 'Diễn giải': 'Tự động từ chi phí (tổng hợp từ ' + agg.length + ' dòng)' }, phieuNhapId);
                             console.log('✅ Đã tự động tạo phiếu nhập kho:', phieuNhapId);
                         }
                     }
@@ -5279,12 +5317,12 @@ async function submitQuickExpense(params) {
                             'Trangthai': 'Hoàn thành',
                             'TongTien': tongTien
                         };
-                        var phieuNhapResult = await callSupabase('insert', 'Phieunhap', phieuNhapData);
+                        var phieuNhapResult = await callFirebase('insert', 'Phieunhap', phieuNhapData);
                         if (phieuNhapResult.status !== 'success') {
                             console.warn('Không thể tạo phiếu nhập:', phieuNhapResult.message);
                         }
                     } else {
-                        await callSupabase('update', 'Phieunhap', {
+                        await callFirebase('update', 'Phieunhap', {
                             'TongTien': tongTien,
                             'Diễn giải': 'Tự động từ chi phí (tổng hợp từ ' + children.length + ' dòng)'
                         }, phieuNhapId);
@@ -5310,7 +5348,7 @@ async function submitQuickExpense(params) {
         }, 0);
 
         // Cập nhật tổng tiền vào phiếu cha
-        await callSupabase('update', 'Chiphi', { 'TongSoTien': tongTien }, parentId);
+        await callFirebase('update', 'Chiphi', { 'TongSoTien': tongTien }, parentId);
 
         // Refresh bảng cha để hiển thị mới nhất
         await refreshSingleSheet('Chiphi');
@@ -5704,10 +5742,10 @@ async function submitQuickExport(params) {
             'GhiChu': params.ghichu || params.lydo
         };
 
-        var chiTietResult = await callSupabase('insert', 'XuatChiTiet', chiTietData);
+        var chiTietResult = await callFirebase('insert', 'XuatChiTiet', chiTietData);
         if (chiTietResult.status !== 'success') {
             // Fallback: tạo phiếu cha tạm trước
-            var stubResult = await callSupabase('insert', 'Phieuxuat', {
+            var stubResult = await callFirebase('insert', 'Phieuxuat', {
                 'ID phieu Xuat': phieuXuatId,
                 'NgayXuat': params.date,
                 'Tên kho': params.kho,
@@ -5717,7 +5755,7 @@ async function submitQuickExport(params) {
                 'TongTien': params.thanhtien
             });
             if (stubResult.status === 'success') {
-                chiTietResult = await callSupabase('insert', 'XuatChiTiet', chiTietData);
+                chiTietResult = await callFirebase('insert', 'XuatChiTiet', chiTietData);
             }
         }
 
@@ -5737,7 +5775,7 @@ async function submitQuickExport(params) {
         });
 
         if (!existingPhieu) {
-            await callSupabase('insert', 'Phieuxuat', {
+            await callFirebase('insert', 'Phieuxuat', {
                 'ID phieu Xuat': phieuXuatId,
                 'NgayXuat': params.date,
                 'Tên kho': params.kho,
@@ -5747,7 +5785,7 @@ async function submitQuickExport(params) {
                 'TongTien': tongTien
             });
         } else {
-            await callSupabase('update', 'Phieuxuat', {
+            await callFirebase('update', 'Phieuxuat', {
                 'TongTien': tongTien,
                 'Diễn giải': params.lydo + ' (tổng hợp từ ' + children.length + ' vật tư)'
             }, phieuXuatId);
@@ -5761,7 +5799,7 @@ async function submitQuickExport(params) {
         if (tonNguon && stockKey) {
             var newTon = (parseFloat(tonNguon[stockKey]) || 0) - params.soluong;
             var upd = {}; upd[stockKey] = newTon;
-            await callSupabase('update', 'Tonkho', upd, tonNguon['ID_TonKho']);
+            await callFirebase('update', 'Tonkho', upd, tonNguon['ID_TonKho']);
         }
 
         // Refresh
@@ -5989,9 +6027,9 @@ async function submitQuickTransfer(params) {
             'GhiChu': params.ghichu || 'Chuyển kho nhanh'
         };
 
-        var chiTietResult = await callSupabase('insert', 'Chuyenkhochitiet', chiTietData);
+        var chiTietResult = await callFirebase('insert', 'Chuyenkhochitiet', chiTietData);
         if (chiTietResult.status !== 'success') {
-            var stubResult = await callSupabase('insert', 'Phieuchuyenkho', {
+            var stubResult = await callFirebase('insert', 'Phieuchuyenkho', {
                 'ID Chkho': chuyenKhoId,
                 'NgayChuyen': params.date,
                 'KhoDi': params.khoNguon,
@@ -6004,7 +6042,7 @@ async function submitQuickTransfer(params) {
                 'TongGiaTri': params.thanhtien
             });
             if (stubResult.status === 'success') {
-                chiTietResult = await callSupabase('insert', 'Chuyenkhochitiet', chiTietData);
+                chiTietResult = await callFirebase('insert', 'Chuyenkhochitiet', chiTietData);
             }
         }
 
@@ -6025,7 +6063,7 @@ async function submitQuickTransfer(params) {
         });
 
         if (!existingPhieu) {
-            await callSupabase('insert', 'Phieuchuyenkho', {
+            await callFirebase('insert', 'Phieuchuyenkho', {
                 'ID Chkho': chuyenKhoId,
                 'NgayChuyen': params.date,
                 'KhoDi': params.khoNguon,
@@ -6038,7 +6076,7 @@ async function submitQuickTransfer(params) {
                 'TongGiaTri': tongGT
             });
         } else {
-            await callSupabase('update', 'Phieuchuyenkho', {
+            await callFirebase('update', 'Phieuchuyenkho', {
                 'TongSoLuong': tongSL,
                 'TongGiaTri': tongGT,
                 'LyDo': params.lydo || 'Tổng hợp từ ' + children.length + ' vật tư'
@@ -6099,7 +6137,7 @@ async function updateInventoryForTransfer(vattuId, khoNguon, khoDich, soLuong) {
         if (nguonTon && stockKey) {
             var newTonNguon = (parseFloat(nguonTon[stockKey]) || 0) - soLuong;
             var updNguon = {}; updNguon[stockKey] = newTonNguon;
-            await callSupabase('update', 'Tonkho', updNguon, nguonTon['ID_TonKho']);
+            await callFirebase('update', 'Tonkho', updNguon, nguonTon['ID_TonKho']);
         }
 
         // Tăng tồn kho đích
@@ -6110,14 +6148,14 @@ async function updateInventoryForTransfer(vattuId, khoNguon, khoDich, soLuong) {
             if (dichTon) {
                 var newTonDich = (parseFloat(dichTon[stockKey]) || 0) + soLuong;
                 var updDich = {}; updDich[stockKey] = newTonDich;
-                await callSupabase('update', 'Tonkho', updDich, dichTon['ID_TonKho']);
+                await callFirebase('update', 'Tonkho', updDich, dichTon['ID_TonKho']);
             } else {
                 var ins = {
                     'ID vật tư': vattuId,
                     'ID kho': khoDich
                 };
                 ins[stockKey] = soLuong;
-                await callSupabase('insert', 'Tonkho', ins);
+                await callFirebase('insert', 'Tonkho', ins);
             }
         }
     } catch (inventoryError) {
