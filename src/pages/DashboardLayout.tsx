@@ -82,7 +82,7 @@ export default function DashboardLayout() {
             onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
           >
             <div className="h-8 w-8 bg-white rounded-sm p-1 flex items-center justify-center">
-              <img src="/logo.png" alt="Logo" className="h-full w-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              <img src="./logo.png" alt="Logo" className="h-full w-full object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
             </div>
             <span className="font-bold text-lg hidden sm:block tracking-wide">QUẢN LÝ KHO CDX</span>
           </div>

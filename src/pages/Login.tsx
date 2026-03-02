@@ -67,7 +67,7 @@ export default function Login() {
         <CardHeader className="space-y-2 text-center pt-8 pb-4">
           <div className="flex justify-center mb-4">
             <div className="h-20 w-auto">
-              <img src="/logo.png" alt="CDX Logo" className="h-full w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+              <img src="./logo.png" alt="CDX Logo" className="h-full w-auto object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
             </div>
           </div>
           <CardTitle className="text-xl font-bold uppercase text-[#2E7D32] tracking-wide">
