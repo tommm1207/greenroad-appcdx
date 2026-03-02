@@ -121,6 +121,8 @@ h6,
     display: flex;
     flex-direction: column;
     min-height: 0;
+    /* THÊM DÒNG DƯỚI ĐÂY */
+    margin-top: calc(var(--navbar-height) + env(safe-area-inset-top, 0px)) !important;
 }
 
 .main-content .content-tab:not(.d-none) {
