@@ -1,0 +1,21 @@
+{
+  "name": "Hệ Thống Quản Lý CDX",
+  "short_name": "QL Kho CDX",
+  "description": "Hệ thống quản lý kho và tài chính CDX",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f8f9fa",
+  "theme_color": "#1B5E20",
+  "icons": [
+    {
+      "src": "logo.jpg",
+      "sizes": "192x192",
+      "type": "image/jpeg"
+    },
+    {
+      "src": "logo.jpg",
+      "sizes": "512x512",
+      "type": "image/jpeg"
+    }
+  ]
+}
