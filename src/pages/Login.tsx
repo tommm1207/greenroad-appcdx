@@ -4,29 +4,14 @@ import { Button } from "@/src/components/ui/button";
 import { Input } from "@/src/components/ui/input";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/src/components/ui/card";
 
-// Firebase
-import { initializeApp, getApps } from "firebase/app";
-import { getFirestore, collection, query, where, getDocs } from "firebase/firestore";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyDBZaMGbP-bhxLY0O75vGXUdNe3kDR_UhM",
-  authDomain: "greenroad-appcdx.firebaseapp.com",
-  projectId: "greenroad-appcdx",
-  storageBucket: "greenroad-appcdx.firebasestorage.app",
-  messagingSenderId: "1018014184662",
-  appId: "1:1018014184662:web:5214f704fc58184e9b0577"
-};
-
-// Tránh khởi tạo nhiều lần khi hot-reload
-const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApps()[0];
-const db = getFirestore(app);
-
 export default function Login() {
   const [userId, setUserId] = useState("");
   const [appPass, setAppPass] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+
+  const GAS_URL = "https://script.google.com/macros/s/AKfycbxEcIOTS8i_YgEFYmzarMPZyD0wos0GWo4fG233i-K3DhgfAx-jEh7zg0h-qAAsc-B0/exec";
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -40,45 +25,32 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      // Query Firestore: collection "User", tìm document có field ID = userId
-      const userRef = collection(db, "User");
-      const q = query(userRef, where("ID", "==", userId));
-      const snapshot = await getDocs(q);
+      const response = await fetch(`${GAS_URL}?action=loginUser&args=${encodeURIComponent(JSON.stringify([userId, appPass]))}`);
+      const data = await response.json();
 
-      if (snapshot.empty) {
-        setError("Sai tài khoản hoặc mật khẩu");
-        return;
+      if (data.user) {
+        const rawRole: string = data.user.role || "";
+        const roleLower = rawRole.toLowerCase();
+        const role = roleLower === "admin app"
+          ? "admin app"
+          : roleLower.includes("admin")
+          ? "admin"
+          : "user";
+
+        localStorage.setItem("isAuthenticated", "true");
+        localStorage.setItem("currentUser", JSON.stringify({
+          id: data.user.id,
+          name: data.user.name,
+          role,
+          rawRole
+        }));
+        navigate("/");
+      } else {
+        setError(data.error || "Sai tài khoản hoặc mật khẩu");
       }
-
-      const userDoc = snapshot.docs[0].data();
-
-      // Kiểm tra App_pass
-      if (userDoc.App_pass !== appPass) {
-        setError("Sai tài khoản hoặc mật khẩu");
-        return;
-      }
-
-      // Xác định role
-      const rawRole: string = userDoc["Phân quyền"] || userDoc["Chức vụ"] || "";
-      const roleLower = rawRole.toLowerCase();
-      const role = roleLower === "admin app"
-        ? "admin app"
-        : roleLower.includes("admin")
-        ? "admin"
-        : "user";
-
-      localStorage.setItem("isAuthenticated", "true");
-      localStorage.setItem("currentUser", JSON.stringify({
-        id: userDoc.ID,
-        name: userDoc["Họ tên"] || userDoc.ID,
-        role,
-        rawRole
-      }));
-
-      navigate("/");
     } catch (err) {
       console.error("Login error:", err);
-      setError("Lỗi kết nối Firebase. Vui lòng thử lại sau.");
+      setError("Lỗi kết nối đến máy chủ. Vui lòng thử lại sau.");
     } finally {
       setIsLoading(false);
     }
